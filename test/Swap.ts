@@ -52,21 +52,21 @@ describe("Swap contract", () => {
 		});
 
 		it("should swap success 200 usdt -> 1 bnb", async () => {
-			const swapAmount = "200";
-			const expectedBnbAmount = "1";
+			const usdtSwapAmount = "200";
+			const bnbSwapAmount = "1";
 
 			await usdt
 				.connect(lender)
-				.approve(await contract.getAddress(), parseEther(swapAmount));
+				.approve(await contract.getAddress(), parseEther(usdtSwapAmount));
 
 			const tx = await contract
 				.connect(lender)
-				.swapUsdtToBnb(parseEther(swapAmount));
+				.swapUsdtToBnb(parseEther(bnbSwapAmount));
 
 			await expect(tx).to.changeTokenBalance(
 				bnb,
 				lender,
-				parseEther(expectedBnbAmount)
+				parseEther(bnbSwapAmount)
 			);
 			// const receipt = await tx.wait();
 			// console.log(receipt?.cumulativeGasUsed);
@@ -77,30 +77,32 @@ describe("Swap contract", () => {
 
 			const balanceAfter = await usdt.balanceOf(lender);
 
-			expect(balanceAfter).to.eq(usdtBalance - parseEther(swapAmount));
+			expect(balanceAfter).to.eq(usdtBalance - parseEther(usdtSwapAmount));
 
 			expect(await bnb.balanceOf(lender)).to.eq(
-				bnbBalance + parseEther(expectedBnbAmount)
+				bnbBalance + parseEther(bnbSwapAmount)
 			);
 		});
 
 		it("should swap success 200/3", async () => {
-			const swapAmount = (200 / 3).toString();
+			const usdtSwapAmount = (200 / 3).toString();
+			const bnbSwapAmount = (1 / 3).toString();
 
 			await usdt
 				.connect(lender)
-				.approve(await contract.getAddress(), parseEther(swapAmount));
+				.approve(await contract.getAddress(), parseEther(usdtSwapAmount));
 
 			const tx = await contract
 				.connect(lender)
-				.swapUsdtToBnb(parseEther(swapAmount));
+				.swapUsdtToBnb(parseEther(bnbSwapAmount));
 
 			await expect(tx).to.changeTokenBalance(
 				usdt,
 				lender,
-				-parseEther(swapAmount)
+				-parseEther((Number(bnbSwapAmount) * 200).toString())
 			);
 			expect(await bnb.balanceOf(lender)).to.greaterThan(bnbBalance);
+			expect(await usdt.balanceOf(lender)).to.lessThan(usdtBalance);
 		});
 	});
 });

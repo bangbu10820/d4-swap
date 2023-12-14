@@ -14,10 +14,9 @@ contract Swap {
     }
 
     // 1 bnb = 200 usdt
-    function swapUsdtToBnb(uint _amount) public {
-        usdt.transferFrom(msg.sender, address(this), _amount);
-        uint bnbAmount = _amount / 200;
-        bnb.transfer(msg.sender, bnbAmount);
+    function swapUsdtToBnb(uint _bnbAmount) public {
+        usdt.transferFrom(msg.sender, address(this), _bnbAmount * 200);
+        bnb.transfer(msg.sender, _bnbAmount);
     }
 
     // function fund(
