@@ -1,10 +1,14 @@
 import { ethers } from "hardhat";
 import { EscrowErc20, Token, Swap } from "../typechain-types";
 import { expect } from "chai";
-import { ZeroAddress, parseEther } from "ethers";
+import { ZeroAddress, formatUnits, parseEther, parseUnits } from "ethers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { before, beforeEach } from "mocha";
+
+const parseEtherWithDecimal = (amount: number | string, decimals: bigint) =>
+	parseUnits(amount.toString().substring(0, Number(decimals) + 1), decimals);
+// BigInt(amount.toString()) * BigInt(10) ** decimals;
 
 describe("Swap contract", () => {
 	let contract: Swap;
@@ -14,20 +18,23 @@ describe("Swap contract", () => {
 	let contractOwner: HardhatEthersSigner;
 	let lender: HardhatEthersSigner;
 
+	let usdtDecimals: bigint = BigInt(6);
+	let bnbDecimals: bigint = BigInt(18);
+
 	before(async () => {
 		[contractOwner, lender] = await ethers.getSigners();
 
 		const BNB = await ethers.getContractFactory("Token");
-		bnb = await BNB.deploy("BNB", "BNB", 18);
+		bnb = await BNB.deploy("BNB", "BNB", bnbDecimals);
 
 		const USDT = await ethers.getContractFactory("Token");
-		usdt = await USDT.deploy("USDT", "USDT", 18);
+		usdt = await USDT.deploy("USDT", "USDT", usdtDecimals);
 
 		const SWAP = await ethers.getContractFactory("Swap");
 		contract = await SWAP.deploy(bnb, usdt);
 
-		await usdt.transfer(contract, parseEther("100000"));
-		await bnb.transfer(contract, parseEther("100000"));
+		await usdt.transfer(contract, parseEtherWithDecimal(100, usdtDecimals));
+		await bnb.transfer(contract, parseEtherWithDecimal(10000, bnbDecimals));
 	});
 
 	it("should contract have correct addresses", async () => {
@@ -36,8 +43,11 @@ describe("Swap contract", () => {
 	});
 
 	it("should swap fail if dont have enought usdt", async () => {
-		expect(contract.connect(lender).swapUsdtToBnb(parseEther("100"))).to
-			.reverted;
+		expect(
+			contract
+				.connect(lender)
+				.swapUsdtToBnb(parseEtherWithDecimal(100, bnbDecimals))
+		).to.reverted;
 	});
 
 	describe("Swap", () => {
@@ -45,7 +55,7 @@ describe("Swap contract", () => {
 		let bnbBalance: bigint;
 
 		beforeEach(async () => {
-			await usdt.transfer(lender, parseEther("200"));
+			await usdt.transfer(lender, parseEtherWithDecimal(200, usdtDecimals));
 
 			usdtBalance = await usdt.balanceOf(lender);
 			bnbBalance = await bnb.balanceOf(lender);
@@ -57,16 +67,21 @@ describe("Swap contract", () => {
 
 			await usdt
 				.connect(lender)
-				.approve(await contract.getAddress(), parseEther(usdtSwapAmount));
+				.approve(
+					await contract.getAddress(),
+					parseEtherWithDecimal(usdtSwapAmount, usdtDecimals)
+				);
+
+			console.log(usdtBalance);
 
 			const tx = await contract
 				.connect(lender)
-				.swapUsdtToBnb(parseEther(bnbSwapAmount));
+				.swapUsdtToBnb(parseEtherWithDecimal(bnbSwapAmount, bnbDecimals));
 
 			await expect(tx).to.changeTokenBalance(
 				bnb,
 				lender,
-				parseEther(bnbSwapAmount)
+				parseEtherWithDecimal(bnbSwapAmount, bnbDecimals)
 			);
 			// const receipt = await tx.wait();
 			// console.log(receipt?.cumulativeGasUsed);
@@ -77,29 +92,33 @@ describe("Swap contract", () => {
 
 			const balanceAfter = await usdt.balanceOf(lender);
 
-			expect(balanceAfter).to.eq(usdtBalance - parseEther(usdtSwapAmount));
+			expect(balanceAfter).to.eq(
+				usdtBalance - parseEtherWithDecimal(usdtSwapAmount, usdtDecimals)
+			);
 
 			expect(await bnb.balanceOf(lender)).to.eq(
-				bnbBalance + parseEther(bnbSwapAmount)
+				bnbBalance + parseEtherWithDecimal(bnbSwapAmount, bnbDecimals)
 			);
 		});
 
 		it("should swap success 200/3", async () => {
 			const usdtSwapAmount = (200 / 3).toString();
 			const bnbSwapAmount = (1 / 3).toString();
-
 			await usdt
 				.connect(lender)
-				.approve(await contract.getAddress(), parseEther(usdtSwapAmount));
+				.approve(
+					await contract.getAddress(),
+					parseEtherWithDecimal(usdtSwapAmount.toString(), usdtDecimals)
+				);
 
 			const tx = await contract
 				.connect(lender)
-				.swapUsdtToBnb(parseEther(bnbSwapAmount));
+				.swapUsdtToBnb(parseEtherWithDecimal(bnbSwapAmount, bnbDecimals));
 
 			await expect(tx).to.changeTokenBalance(
-				usdt,
+				bnb,
 				lender,
-				-parseEther((Number(bnbSwapAmount) * 200).toString())
+				parseEtherWithDecimal(bnbSwapAmount, bnbDecimals)
 			);
 			expect(await bnb.balanceOf(lender)).to.greaterThan(bnbBalance);
 			expect(await usdt.balanceOf(lender)).to.lessThan(usdtBalance);
