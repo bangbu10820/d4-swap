@@ -31,7 +31,7 @@ describe("Swap contract", () => {
 		usdt = await USDT.deploy("USDT", "USDT", usdtDecimals);
 
 		const SWAP = await ethers.getContractFactory("Swap");
-		contract = await SWAP.deploy(bnb, usdt);
+		contract = await SWAP.deploy(bnb, usdt, parseUnits("200", usdtDecimals));
 
 		await usdt.transfer(contract, parseEtherWithDecimal(100, usdtDecimals));
 		await bnb.transfer(contract, parseEtherWithDecimal(10000, bnbDecimals));
@@ -108,7 +108,7 @@ describe("Swap contract", () => {
 				.connect(lender)
 				.approve(
 					await contract.getAddress(),
-					parseEtherWithDecimal(usdtSwapAmount.toString(), usdtDecimals)
+					parseEtherWithDecimal("200".toString(), usdtDecimals)
 				);
 
 			const tx = await contract

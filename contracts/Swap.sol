@@ -10,29 +10,17 @@ contract Swap {
     Token bnb;
     Token usdt;
 
-    constructor(Token _bnb, Token _usdt) {
+    uint256 price; // 1 BNB = price USDT
+
+    constructor(Token _bnb, Token _usdt, uint256 _price) {
         bnb = _bnb;
         usdt = _usdt;
+        price = _price;
     }
 
     // 1 bnb = 200 usdt
     function swapUsdtToBnb(uint _bnbAmount) public {
-        uint bnbDecimals = bnb.decimals();
-        uint usdtDecimals = usdt.decimals();
-        uint pow;
-        uint usdtAmount;
-
-        if (bnbDecimals > usdtDecimals) {
-            pow = bnbDecimals - usdtDecimals;
-            usdtAmount = (_bnbAmount / (10 ** pow)) * 200;
-        } else {
-            pow = usdtDecimals - bnbDecimals;
-            usdtAmount = _bnbAmount * (10 ** pow) * 200;
-        }
-
-        console.log("--------");
-        console.log(pow);
-        console.log("--------");
+        uint usdtAmount = (_bnbAmount * price) / (10 ** bnb.decimals());
 
         console.log(usdtAmount, "usdtAmount");
 
