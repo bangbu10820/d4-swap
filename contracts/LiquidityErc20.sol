@@ -17,6 +17,8 @@ contract LiquidityErc20 is ERC20 {
     uint bnbAmount;
     uint usdtAmount;
 
+    bool init;
+
     address contractOwner;
 
     uint feePercentage;
@@ -27,20 +29,37 @@ contract LiquidityErc20 is ERC20 {
         string memory name,
         string memory symbol,
         uint8 decimal,
-        uint _bnbAmount,
-        uint _usdtAmount
+        Token _bnb,
+        Token _usdt
     ) ERC20(name, symbol) {
         _decimals = decimal;
         feePercentage = 0;
 
-        bnb.transferFrom(msg.sender, address(this), _bnbAmount);
-        usdt.transferFrom(msg.sender, address(this), _usdtAmount);
-        _k = _bnbAmount * _usdtAmount;
-        bnbAmount = _bnbAmount;
-        usdtAmount = _usdtAmount;
+        bnb = _bnb;
+        usdt = _usdt;
+
+        _k = 0;
+
+        init = false;
 
         contractOwner = msg.sender;
-        _currentSupply = ((_bnbAmount * decimal) / (10 ** bnb.decimals()));
+    }
+
+    function getBnbPrice() public view returns (uint) {
+        return (_k / (bnbAmount - 10 ** bnb.decimals())) - usdtAmount;
+    }
+
+    function initFund(uint _bnbAmount, uint _usdtAmount) public {
+        require(!init, "Can only init 1");
+        init = true;
+
+        bnb.transferFrom(msg.sender, address(this), _bnbAmount);
+        usdt.transferFrom(msg.sender, address(this), _usdtAmount);
+        bnbAmount = _bnbAmount;
+        usdtAmount = _usdtAmount;
+        _k = bnbAmount * usdtAmount;
+
+        _currentSupply = ((_bnbAmount * _decimals) / (10 ** bnb.decimals()));
         _mint(msg.sender, _currentSupply);
     }
 
@@ -48,16 +67,26 @@ contract LiquidityErc20 is ERC20 {
         // Calculate bnb percentage
         uint percentage = _bnbAmount / bnbAmount;
 
-        // Calculate corresponding usdt amount to fund
-        uint requiredUsdtAmount = percentage * usdtAmount;
+        uint newBnbAmount = bnbAmount + _bnbAmount;
+
+        // Calculate corresponding usdt amount need to fund
+        uint bnbPriceByUsdt = getBnbPrice();
+
+        // This is the new usdt amount to maintain the price
+        uint newUsdtAmount = bnbPriceByUsdt *
+            (newBnbAmount / (10 ** bnb.decimals()) - 1); // From Toandq's imagination
 
         // Take bnb and usdt from funder
         bnb.transferFrom(msg.sender, address(this), _bnbAmount);
-        usdt.transferFrom(msg.sender, address(this), requiredUsdtAmount);
+        usdt.transferFrom(
+            msg.sender,
+            address(this),
+            newUsdtAmount - usdtAmount
+        );
 
         // Update bnb and usdt amount, and _k constant
-        bnbAmount += _bnbAmount;
-        usdtAmount += requiredUsdtAmount;
+        bnbAmount = newBnbAmount;
+        usdtAmount = newUsdtAmount;
         _k = bnbAmount * usdtAmount;
 
         // Reward LP to funder
