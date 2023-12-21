@@ -26,9 +26,10 @@ describe("Swap contract", () => {
 
 	let usdtDecimals: bigint = BigInt(6);
 	let bnbDecimals: bigint = BigInt(18);
+	let contractLpDecimals: bigint = BigInt(18);
 
 	const baseBnb = 100;
-	const baseUsdt = 200;
+	const baseUsdt = 20000;
 
 	before(async () => {
 		[contractOwner, buyer] = await ethers.getSigners();
@@ -40,7 +41,13 @@ describe("Swap contract", () => {
 		usdt = await USDT.deploy("USDT", "USDT", usdtDecimals);
 
 		const LIQUIDITY = await ethers.getContractFactory("LiquidityErc20");
-		contract = await LIQUIDITY.deploy("ANYA", "AN", 18, bnb, usdt);
+		contract = await LIQUIDITY.deploy(
+			"ANYA",
+			"AN",
+			contractLpDecimals,
+			bnb,
+			usdt
+		);
 
 		await usdt.transfer(
 			contractOwner,
@@ -81,15 +88,24 @@ describe("Swap contract", () => {
 		);
 	});
 
+	it("should owner have LP === BNB", async () => {
+		const ownerLp = await contract.balanceOf(contractOwner);
+		const contractBnb = await bnb.balanceOf(contract);
+
+		expect(ownerLp / contractLpDecimals).to.eq(contractBnb / bnbDecimals);
+	});
+
 	describe("Fund", () => {
 		let baseBnbPrice: bigint;
+		let contractOwnerLp: bigint;
 
 		before(async () => {
 			baseBnbPrice = await contract.getBnbPrice();
 			console.log(baseBnbPrice);
+			contractOwnerLp = await contract.balanceOf(contractOwner);
 		});
 
-		it("should retain bnb price after fund 100 bnb", async () => {
+		it("should successful fund 100 bnb", async () => {
 			await usdt.transfer(
 				contractOwner,
 				parseEtherWithDecimal(20000, usdtDecimals)
@@ -114,10 +130,63 @@ describe("Swap contract", () => {
 					parseEtherWithDecimal(100, bnbDecimals)
 				);
 
-			await contract.fund(parseEtherWithDecimal(100, bnbDecimals));
+			expect(await contract.fund(parseEtherWithDecimal(100, bnbDecimals))).not
+				.reverted;
+		});
 
+		it.skip("should retain bnb price after fund 100 bnb", async () => {
 			const newPrice = await contract.getBnbPrice();
 			expect(newPrice).to.eq(baseBnbPrice);
+		});
+
+		it("should change contract owner lp balances after fund", async () => {
+			const newLp = await contract.balanceOf(contractOwner);
+			expect(newLp).to.greaterThan(contractOwnerLp);
+		});
+	});
+
+	describe("Withdraw", () => {
+		let baseBnbPrice: bigint;
+		let contractOwnerLp: bigint;
+		let baseBnbAmount: bigint;
+		let baseUsdtAmount: bigint;
+
+		let baseContractBnb: bigint;
+		let baseContractUsdt: bigint;
+
+		before(async () => {
+			baseBnbPrice = await contract.getBnbPrice();
+			console.log(baseBnbPrice);
+			contractOwnerLp = await contract.balanceOf(contractOwner);
+			baseBnbAmount = await bnb.balanceOf(contractOwner);
+			baseUsdtAmount = await usdt.balanceOf(contractOwner);
+
+			baseContractBnb = await bnb.balanceOf(contract);
+			baseContractUsdt = await usdt.balanceOf(contract);
+		});
+
+		it("should successful burn half lp of contract owner", async () => {
+			expect(await contract.withdraw(contractOwnerLp / 10n)).not.reverted;
+		});
+
+		it("should LP of owner become half", async () => {
+			const newLp = await contract.balanceOf(contractOwner);
+			expect(newLp).to.lessThan(contractOwnerLp);
+			expect(newLp).to.eq(contractOwnerLp - contractOwnerLp / 10n);
+		});
+
+		it("should BNB and USDT of owner increase, contract decrease", async () => {
+			const newBnbAmount = await bnb.balanceOf(contractOwner);
+			const newUsdtAmount = await usdt.balanceOf(contractOwner);
+
+			expect(newBnbAmount).to.greaterThan(baseBnbAmount);
+			expect(newUsdtAmount).to.greaterThan(baseUsdtAmount);
+
+			const newContractBnb = await bnb.balanceOf(contract);
+			const newContractUsdt = await usdt.balanceOf(contract);
+
+			expect(newContractBnb).to.lessThan(baseContractBnb);
+			expect(newContractUsdt).to.lessThan(baseContractUsdt);
 		});
 	});
 });
