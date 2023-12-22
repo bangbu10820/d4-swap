@@ -7,6 +7,9 @@ import "./Token.sol";
 import "hardhat/console.sol";
 
 contract LiquidityErc20 is ERC20 {
+    mapping(address account => uint256) private _balances;
+    uint256 private _totalSupply;
+
     uint256 private _currentSupply;
     uint8 private _decimals;
 
@@ -23,7 +26,12 @@ contract LiquidityErc20 is ERC20 {
 
     uint feePercentage;
 
-    mapping(address account => uint256) private _lpHolders;
+    uint currentBnbRewardPerLp;
+    uint rewardDecimals;
+
+    mapping(address => uint) claimedBnbReward;
+    mapping(address => uint) ignoreBnbAmount;
+    mapping(address => uint) pendingBnbAmount;
 
     constructor(
         string memory name,
@@ -43,6 +51,36 @@ contract LiquidityErc20 is ERC20 {
         init = false;
 
         contractOwner = msg.sender;
+
+        currentBnbRewardPerLp = 0;
+        rewardDecimals = 10 ** 24;
+
+        _currentSupply = 0;
+    }
+
+    function updateCurrentBnbRewardPerLp(uint _bnbAmount) private {
+        uint r = (_bnbAmount * rewardDecimals) / _currentSupply;
+        currentBnbRewardPerLp += r;
+    }
+
+    function claimReward() public {
+        uint reward = calculateClaimableReward(msg.sender);
+
+        pendingBnbAmount[msg.sender] = 0;
+        claimedBnbReward[msg.sender] += reward;
+
+        bnb.transfer(msg.sender, reward / rewardDecimals);
+    }
+
+    function calculateClaimableReward(
+        address account
+    ) private view returns (uint) {
+        return
+            currentBnbRewardPerLp *
+            balanceOf(account) -
+            claimedBnbReward[account] -
+            ignoreBnbAmount[account] +
+            pendingBnbAmount[account];
     }
 
     function getBnbPrice() public view returns (uint) {
@@ -128,7 +166,9 @@ contract LiquidityErc20 is ERC20 {
         usdtAmount += price;
 
         bnb.transfer(msg.sender, _bnbAmount - fee);
-        bnb.transfer(contractOwner, fee);
+
+        // Calculate reward
+        updateCurrentBnbRewardPerLp(fee);
         console.log(bnbAmount, usdtAmount);
     }
 
@@ -143,6 +183,7 @@ contract LiquidityErc20 is ERC20 {
         usdtAmount -= price;
         bnb.transferFrom(msg.sender, address(this), _bnbAmount);
         usdt.transfer(msg.sender, price - fee);
+
         usdt.transfer(contractOwner, fee);
         console.log(bnbAmount, usdtAmount);
     }
@@ -162,5 +203,56 @@ contract LiquidityErc20 is ERC20 {
 
     function decimals() public view virtual override returns (uint8) {
         return _decimals;
+    }
+
+    /**
+     * @dev Transfers a `value` amount of tokens from `from` to `to`, or alternatively mints (or burns) if `from`
+     * (or `to`) is the zero address. All customizations to transfers, mints, and burns should be done by overriding
+     * this function.
+     *
+     * Emits a {Transfer} event.
+     */
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal virtual override {
+        bool isMint = from == address(0);
+        bool isBurn = to == address(0);
+        // Mint
+        if (isMint) {
+            // Overflow check required: The rest of the code assumes that totalSupply never overflows
+            _totalSupply += value;
+            ignoreBnbAmount[to] += currentBnbRewardPerLp * value;
+        } else {
+            uint256 fromBalance = _balances[from];
+            if (fromBalance < value) {
+                revert ERC20InsufficientBalance(from, fromBalance, value);
+            }
+            if (isBurn) {
+                uint burnedReward = currentBnbRewardPerLp * value;
+
+                pendingBnbAmount[from] += burnedReward;
+            }
+            unchecked {
+                // Overflow not possible: value <= fromBalance <= totalSupply.
+                _balances[from] = fromBalance - value;
+            }
+        }
+
+        // burn
+        if (isBurn) {
+            unchecked {
+                // Overflow not possible: value <= totalSupply or value <= fromBalance <= totalSupply.
+                _totalSupply -= value;
+            }
+        } else {
+            unchecked {
+                // Overflow not possible: balance + value is at most totalSupply, which we know fits into a uint256.
+                _balances[to] += value;
+            }
+        }
+
+        emit Transfer(from, to, value);
     }
 }
